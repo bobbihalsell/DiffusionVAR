@@ -120,7 +120,7 @@ python visualisations/generation.py --config config/var.yaml --n_images 1000 --n
 Visualize VQVAE encoding and tokenization:
 
 ```bash
-python visualisations/vqvae.py --config configF/var.yaml --data_path /path/to/imagenet
+python visualisations/generation.py --config configs/diffusionvar.yaml --n_images 10000 --n_display_images 36 --save_dir dvar --classes "1_3_7" --n_class_images 1000 --ep 150
 ```
 
 ### Visualize Masking Patterns
@@ -131,20 +131,6 @@ Analyze different masking strategies:
 python visualisations/masks.py
 python visualisations/schedule.py
 ```
-
-## 🔧 Configuration Options
-
-### Key Training Arguments
-
-| Argument | Description | Default |
-|----------|-------------|---------|
-| `--config` | Path to YAML config file | Required |
-| `--data_path` | Path to ImageNet dataset | Required |
-| `--batch_size` | Training batch size | 128 |
-| `--learning_rate` | Learning rate | 0.0004 |
-| `--epochs` | Number of training epochs | 250 |
-| `--device` | Device to use (cuda:0, cpu) | auto |
-| `--num_workers` | DataLoader workers | 8 |
 
 ### WandB Integration
 
@@ -174,35 +160,51 @@ wandb:
 
 ```
 dvar/
-├── models/                 # Clean model implementations
-│   ├── var/                # VAR model components
+├── models/                 # Model implementations
 │   ├── dvar/               # DiffusionVAR model components
+│   │   ├── dvar.py         # Main DiffusionVAR model
+│   │   └── var.py          # VAR model (moved here)
+│   ├── var/                # VAR model package (empty, var.py moved to dvar/)
 │   ├── vqvae/              # VQVAE tokenization
-│   └── helpers.py          # Utility functions
-├── utils/                  # Clean utility functions
-│   ├── image_metrics.py    # Image quality metrics
+│   │   ├── vqvae.py        # Main VQVAE implementation
+│   │   └── basic_vae.py    # VAE building blocks
+│   ├── helpers.py          # Utility functions
+│   ├── quant.py            # Vector quantization
+│   ├── schedule.py         # Diffusion masking schedule
+│   ├── transformer.py      # Transformer backbone
+│   └── basic_var.py        # VAR building blocks
+├── utils/                  # Utility functions
+│   ├── image_metrics.py    # Image quality metrics (LPIPS, FID, IS)
 │   ├── wandb_setup.py      # WandB integration
+│   ├── data.py             # Data loading utilities
+│   ├── lr_control.py       # Learning rate scheduling
+│   ├── arg_util.py         # Argument parsing
+│   ├── misc.py             # Miscellaneous utilities
 │   └── ...
-├── config/                 # Clean configuration files
+├── configs/                # Configuration files
 │   ├── var.yaml            # VAR training config
-│   └── diffusionvar.yaml   # DiffusionVAR training config
+│   ├── diffusionvar.yaml   # DiffusionVAR training config
+│   └── diffusionvardiag.yaml # DiffusionVAR diagonal config
 ├── visualisations/         # Visualization tools
-│   ├── generation.py       # Image generation
-│   ├── vqvae.py           # VQVAE analysis
+│   ├── generation.py       # Image generation visualization
+│   ├── vqvae.py           # VQVAE analysis and visualization
+│   ├── schedule.py         # Diffusion schedule visualization
+│   ├── masks.py           # Masking visualization
+│   ├── masks/              # Generated mask visualizations
+│   ├── schedule/           # Generated schedule plots
+│   └── vqvae/              # Generated VQVAE analysis plots
+├── checkpoints/            # Model checkpoints
+│   ├── dvar-diag/          # DiffusionVAR diagonal checkpoints
+│   ├── dvar-last/          # Latest DiffusionVAR checkpoints
 │   └── ...
 ├── train.py               # Main training script
-├── trainer.py             # Training utilities
-└── requirements.txt        # Dependencies
+├── trainer.py             # Training utilities and loop
+├── dist.py                # Distributed training utilities
+├── requirements.txt        # Python dependencies
+└── README.md              # This file
 ```
 
-## 🎯 Key Features Explained
-
-### Enhanced Training Pipeline
-
-- **Mixed Precision Training**: Automatic mixed precision with gradient scaling
-- **Distributed Training**: Multi-GPU support with proper synchronization
-- **Gradient Clipping**: Prevents exploding gradients
-- **Learning Rate Scheduling**: Cosine annealing with warmup
+## Key Features
 
 ### Advanced Visualizations
 
@@ -218,24 +220,7 @@ dvar/
 - **Configuration Management**: YAML-based config with validation
 - **Reproducibility**: Fixed random seeds and deterministic training
 
-## 📈 Performance Tips
-
-1. **Use Flash Attention**: Install `flash-attn` for 2-3x speedup
-2. **Optimize Batch Size**: Use largest batch size that fits in GPU memory
-3. **Enable Mixed Precision**: Reduces memory usage and speeds up training
-4. **Use Multiple GPUs**: Scale training across multiple GPUs
-5. **Monitor Memory**: Use `nvidia-smi` to monitor GPU memory usage
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - [VAR](https://github.com/FoundationVision/VAR) - Original Visual Autoregressive Modeling implementation
-- [DiT](https://github.com/facebookresearch/DiT) - Diffusion Transformer architecture
-- [Taming Transformers](https://github.com/CompVis/taming-transformers) - VQVAE implementation
+- [MD4](https://github.com/darioShar/pytorch-md4) - Masked Diffusion 

@@ -35,16 +35,16 @@ alng: 0.00001               # multiplier of ada_lin.w[gamma channels]'s initiali
 # diffusion parameters
 diffusion_args:
   train_steps: 100          # timesteps for training not used if cont_time is true
-  inf_steps: 10             # timesteps for inference
+  inf_steps: 50             # timesteps for inference
   noise_schedule: 'cosine'          
   cont_time: true           # continuous or discrete time
   t_emb_dim: 256                     
   pstep: null                       # 'lin' or 'log' scale for diffusion steps for patches
-  loss_w_max: 5.1
+  loss_w_max: 6.0
 
 # optimization settings
 fp16: 0                    # 0: fp32, 1: fp16, 2: bf16
-tblr: 0.0004               # base learning rate = tlr * (bs / 256) = 0.0004 * (128 / 256) = 0.0002
+tblr: 0.0002               # base learning rate = tlr * (bs / 256) = 0.0002 * (128 / 256) = 0.0001
 twd: 0.05                  # initial weight decay
 twde: 0                    # final weight decay (0 means use twd)
 tclip: 2.0                 # gradient clipping (<=0 for no clipping)

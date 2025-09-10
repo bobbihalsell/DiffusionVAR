@@ -73,7 +73,6 @@ def build_models_and_data(args):
         init_std=args.ini,
         drop_rate=args.drop_rate, 
         attn_drop_rate=args.attn_drop_rate,
-        zero_init=args.zero_init, 
         diffusion_args=args.diffusion_args,
     )
     

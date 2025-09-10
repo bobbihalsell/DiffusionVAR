@@ -98,7 +98,7 @@ class Backbone(nn.Module):
             h = h_or_h_and_residual
         return self.head(self.head_nm(h.float(), cond_BD).float()).float()
     
-    def forward(self, x_BLC, cond_BD, attn_bias):
+    def forward(self, x_BLC, cond_BD, attn_bias=None):
         """
         Forward pass through the transformer backbone
         :param x_BLC: Input tensor (B, L, C) where L is sequence length
