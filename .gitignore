@@ -1,0 +1,15 @@
+__pycache__/
+*.pth
+*.pt
+*.ckpt
+checkpoints/
+runs/
+logs/
+wandb/
+data/
+imagenet*/
+checkpoints*/
+generation*/
+dvar-*/
+var-*/
+final*/

@@ -1,17 +1,17 @@
 # algorithm
-algo: 'diffusion-var'  # 'diffusion-var' or 'var'
+algo: 'var'  # 'diffusion-var' or 'var'
 
 # wandb configuration
-wandb_run_id: 'DVAR'            # set to specific run ID to resume (if exists) or create new run with this ID
+wandb_run_id: 'VAR_10'            # set to specific run ID to resume (if exists) or create new run with this ID
 enable_wandb: true              
 wandb_project: 'diffusion-var'  # WandB project name for logging
 wandb_it: 100                   # log every wandb_it steps
 
-output_dir_name: 'checkpoints/dvar'  # training output directory
+output_dir_name: '/vol/bitbucket/blh124/project/final/checkpoints/var_10' #'checkpoints/var_10'  # training output directory
 
 # data configuration
 data_path: '/vol/bitbucket/blh124/project/dvar/imagenet_subset10'  # path to dataset 
-exp_name: 'dvar'                                                   # experiment name
+exp_name: 'var_10'                                                   # experiment name
 
 # vae configuration
 vfast: 0                       # torch.compile VAE; 0: not compile; 1: reduce-overhead; 2: max-autotune
@@ -32,19 +32,12 @@ hd: 0.02                    # head.w *= hd
 aln: 0.5                    # multiplier of ada_lin.w's initialization
 alng: 0.00001               # multiplier of ada_lin.w[gamma channels]'s initialization
 
-# diffusion parameters
-diffusion_args:
-  train_steps: 100          # timesteps for training not used if cont_time is true
-  inf_steps: 10             # timesteps for inference
-  noise_schedule: 'cosine'          
-  cont_time: true           # continuous or discrete time
-  t_emb_dim: 256                     
-  pstep: null                       # 'lin' or 'log' scale for diffusion steps for patches
-  loss_w_max: 5.1
+# diffusion parameters (null for var)
+diffusion_args: null        # not used for VAR model
 
 # optimization settings
 fp16: 0                    # 0: fp32, 1: fp16, 2: bf16
-tblr: 0.0004               # base learning rate = tlr * (bs / 256) = 0.0004 * (128 / 256) = 0.0002
+tblr: 0.0002               # base learning rate = tlr * (bs / 256) = 0.0002 * (128 / 256) = 0.0001
 twd: 0.05                  # initial weight decay
 twde: 0                    # final weight decay (0 means use twd)
 tclip: 2.0                 # gradient clipping (<=0 for no clipping)
@@ -90,10 +83,10 @@ pgwp: 0                    # warmup epochs per progressive stage (0 = auto)
 # validation and metrics
 val_freq: 2                # validation frequency
 calc_img_mtcs: true        # calculate image quality metrics
-image_metrics_freq: 20      # calculate metrics every N epochs
-n_images: 1000             # number of images for FID/metrics calculation
+image_metrics_freq: 150    # calculate metrics every N epochs
+n_images: 100              # number of images for FID/metrics calculation
 n_wandb_images: 16         # number of images to save to WandB 
-image_bs: 128              # batch size for image metrics should be a divisor of bs
+image_bs: 32               # batch size for image metrics should be a divisor of bs
 
 # dataset configuration
 num_classes: 10            # number of classes in dataset

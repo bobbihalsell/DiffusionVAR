@@ -1,11 +1,3 @@
-"""
-References:
-- Scalable Image Generation via Next-Scale Prediction
-  Keyu Tian, Yi Jiang, Zehuan Yuan, Bingyue Peng, Liwei Wang
-
-This file is imported from:
-- VAR: https://github.com/FoundationVision/VAR
-"""
 import datetime
 import functools
 import glob

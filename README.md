@@ -1,93 +1,241 @@
-# DVAR
+# DiffusionVAR: Enhanced Visual Autoregressive Modeling
 
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+**DiffusionVAR** is an diffusion implementation of Visual Autoregressive (VAR) modeling that combines the power of autoregressive generation with masked diffusion modeling. This implementation extends the original [VAR](https://github.com/FoundationVision/VAR) with image evaluation integration visualisation tools, and wandb experiment tracking.
 
-## Getting started
+## 🚀 Key Features!
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+- **Dual Model Support**: Train both VAR and DiffusionVAR models with unified codebase
+- **Rich Visualizations**: Comprehensive tools for analyzing model behavior and generation quality
+- **Experiment Tracking**: Full WandB integration for monitoring training progress
+- **Flexible Configuration**: YAML-based configuration with command-line overrides
+- **Efficient Training**: Flash Attention and XFormers support
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## Requirements
 
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab.doc.ic.ac.uk/blh124/dvar.git
-git branch -M master
-git push -uf origin master
-```
-
-## Integrate with your tools
-
-- [ ] [Set up project integrations](https://gitlab.doc.ic.ac.uk/blh124/dvar/-/settings/integrations)
-
-## Collaborate with your team
-
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+- Python 3.10+
+- PyTorch 2.0+
+- CUDA-compatible GPU (recommended)
 
 ## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+### 1. Install PyTorch and Dependencies
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+First, install PyTorch with CUDA support (adjust for your CUDA version):
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+```bash
+# For CUDA 11.8
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+# For CUDA 12.1
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+```
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+Install other required packages:
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+```bash
+pip install -r requirements.txt
+```
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+### 2. Prepare ImageNet Dataset
 
-## License
-For open source projects, say how it is licensed.
+Prepare your ImageNet dataset in the following structure:
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+```
+/path/to/imagenet/
+├── train/
+│   ├── n01440764/
+│   ├── n01443537/
+│   └── ...
+└── val/
+    ├── n01440764/
+    ├── n01443537/
+    └── ...
+```
+
+### 3. Optional Performance Optimizations
+
+For faster attention computation, install optional packages:
+
+```bash
+# Flash Attention (recommended)
+pip install flash-attn
+
+# XFormers (alternative)
+pip install xformers
+```
+
+The code will automatically detect and use these optimizations if available.
+
+### Training VAR Model
+
+Train a standard VAR model:
+
+```bash
+python train.py --config config/var.yaml --data_path /path/to/imagenet
+```
+
+### Training DiffusionVAR Model
+
+Train a DiffusionVAR model with diffusion masking:
+
+```bash
+python train.py --config config/diffusionvar.yaml --data_path /path/to/imagenet
+```
+
+### Configuration
+
+Configure training via YAML files or command-line arguments:
+
+**YAML Configuration:**
+```yaml
+# config/var.yaml
+algo: 'var'
+data_path: '/path/to/imagenet'
+batch_size: 128
+learning_rate: 0.0004
+epochs: 250
+```
+
+**Command-line Override:**
+```bash
+python train.py --config configF/var.yaml --batch_size 64 --learning_rate 0.0002
+```
+
+## Visualization and Analysis
+
+### Generate Images
+
+Generate images using trained models:
+
+```bash
+python visualisations/generation.py --config config/var.yaml --n_images 1000 --n_display_images 16 --save_dir results
+```
+
+### Analyze VQVAE Tokenization
+
+Visualize VQVAE encoding and tokenization:
+
+```bash
+python visualisations/vqvae.py --config configF/var.yaml --data_path /path/to/imagenet
+```
+
+### Visualize Masking Patterns
+
+Analyze different masking strategies:
+
+```bash
+python visualisations/masks.py
+python visualisations/schedule.py
+```
+
+## 🔧 Configuration Options
+
+### Key Training Arguments
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--config` | Path to YAML config file | Required |
+| `--data_path` | Path to ImageNet dataset | Required |
+| `--batch_size` | Training batch size | 128 |
+| `--learning_rate` | Learning rate | 0.0004 |
+| `--epochs` | Number of training epochs | 250 |
+| `--device` | Device to use (cuda:0, cpu) | auto |
+| `--num_workers` | DataLoader workers | 8 |
+
+### WandB Integration
+
+Enable experiment tracking with WandB:
+
+```yaml
+# In your config file
+wandb:
+  enable: true
+  project: "diffusion-var"
+  run_id: "experiment_1"
+  log_interval: 100
+```
+
+### Model-Specific Arguments
+
+**VAR Model:**
+- `--depth`: Transformer depth (default: 16)
+- `--embed_dim`: Embedding dimension (default: 1024)
+- `--num_heads`: Number of attention heads (default: 16)
+
+**DiffusionVAR Model:**
+- `--diffusion_steps`: Number of diffusion steps (default: 1000)
+- `--masking_schedule`: Masking schedule type (cosine, linear, etc.)
+
+## 📁 Project Structure
+
+```
+dvar/
+├── models/                 # Clean model implementations
+│   ├── var/                # VAR model components
+│   ├── dvar/               # DiffusionVAR model components
+│   ├── vqvae/              # VQVAE tokenization
+│   └── helpers.py          # Utility functions
+├── utils/                  # Clean utility functions
+│   ├── image_metrics.py    # Image quality metrics
+│   ├── wandb_setup.py      # WandB integration
+│   └── ...
+├── config/                 # Clean configuration files
+│   ├── var.yaml            # VAR training config
+│   └── diffusionvar.yaml   # DiffusionVAR training config
+├── visualisations/         # Visualization tools
+│   ├── generation.py       # Image generation
+│   ├── vqvae.py           # VQVAE analysis
+│   └── ...
+├── train.py               # Main training script
+├── trainer.py             # Training utilities
+└── requirements.txt        # Dependencies
+```
+
+## 🎯 Key Features Explained
+
+### Enhanced Training Pipeline
+
+- **Mixed Precision Training**: Automatic mixed precision with gradient scaling
+- **Distributed Training**: Multi-GPU support with proper synchronization
+- **Gradient Clipping**: Prevents exploding gradients
+- **Learning Rate Scheduling**: Cosine annealing with warmup
+
+### Advanced Visualizations
+
+- **Token Analysis**: Visualize VQVAE tokenization patterns
+- **Masking Visualization**: Analyze different masking strategies
+- **Generation Quality**: Comprehensive image quality metrics
+- **Training Monitoring**: Real-time loss and accuracy tracking
+
+### Experiment Management
+
+- **WandB Integration**: Automatic experiment tracking and logging
+- **Checkpoint Management**: Automatic model saving and resuming
+- **Configuration Management**: YAML-based config with validation
+- **Reproducibility**: Fixed random seeds and deterministic training
+
+## 📈 Performance Tips
+
+1. **Use Flash Attention**: Install `flash-attn` for 2-3x speedup
+2. **Optimize Batch Size**: Use largest batch size that fits in GPU memory
+3. **Enable Mixed Precision**: Reduces memory usage and speeds up training
+4. **Use Multiple GPUs**: Scale training across multiple GPUs
+5. **Monitor Memory**: Use `nvidia-smi` to monitor GPU memory usage
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- [VAR](https://github.com/FoundationVision/VAR) - Original Visual Autoregressive Modeling implementation
+- [DiT](https://github.com/facebookresearch/DiT) - Diffusion Transformer architecture
+- [Taming Transformers](https://github.com/CompVis/taming-transformers) - VQVAE implementation

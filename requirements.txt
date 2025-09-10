@@ -1,0 +1,27 @@
+# Core dependencies
+torch>=2.0.0
+torchvision
+numpy
+pillow
+pytz
+
+# Training and utilities
+wandb
+lpips
+pytorch-fid
+pyyaml
+
+# Visualization
+matplotlib
+
+# Optional performance optimizations (install if available)
+# flash-attn
+# xformers
+# timm
+
+# Development and configuration
+huggingface_hub
+transformers
+typed-argument-parser
+hydra-core
+omegaconf
