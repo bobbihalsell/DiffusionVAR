@@ -204,7 +204,7 @@ class VAR(nn.Module):
 
 
     @torch.no_grad()
-    def infer_cfg(
+    def infer_cfg_sr(
         self, B: int, label_B: Optional[Union[int, torch.LongTensor]],
         g_seed: Optional[int] = None, cfg=1.5, top_k=0, top_p=0.0, max_pn = 16,
         more_smooth=False, **kwargs

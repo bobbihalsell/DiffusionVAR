@@ -2,16 +2,16 @@
 algo: 'diffusion-var'  # 'diffusion-var' or 'var'
 
 # wandb configuration
-wandb_run_id: 'DVAR-masks'            # set to specific run ID to resume (if exists) or create new run with this ID
+wandb_run_id: 'DVAR-nomaskloss'            # set to specific run ID to resume (if exists) or create new run with this ID
 enable_wandb: true              
 wandb_project: 'diffusion-var'  # WandB project name for logging
 wandb_it: 100                   # log every wandb_it steps
 
-output_dir_name: 'checkpoints/dvarmasks'  # training output directory
+output_dir_name: 'checkpoints/dvarloss'  # training output directory
 
 # data configuration
 data_path: '/vol/bitbucket/blh124/project/dvar/imagenet_subset10'  # path to dataset 
-exp_name: 'dvar-masks'                                                   # experiment name
+exp_name: 'dvar-nomask'                                                   # experiment name
 
 # vae configuration
 vfast: 0                       # torch.compile VAE; 0: not compile; 1: reduce-overhead; 2: max-autotune
@@ -39,7 +39,7 @@ diffusion_args:
   noise_schedule: 'cosine'          
   cont_time: true           # continuous or discrete time
   t_emb_dim: 256                     
-  pstep: 'lin'               # 'lin' or 'log' scale for diffusion steps for patches
+  pstep: null               # 'lin' or 'log' scale for diffusion steps for patches
   loss_w_max: 6.0
 
 # optimization settings
@@ -88,9 +88,9 @@ pg0: 4                     # progressive initial stage
 pgwp: 0                    # warmup epochs per progressive stage (0 = auto)
 
 # validation and metrics
-val_freq: 2                # validation frequency
+val_freq: 1                # validation frequency
 calc_img_mtcs: true        # calculate image quality metrics
-image_metrics_freq: 10     # calculate metrics every N epochs
+image_metrics_freq: 1     # calculate metrics every N epochs
 n_images: 1000             # number of images for FID/metrics calculation
 n_wandb_images: 16         # number of images to save to WandB 
 image_bs: 128              # batch size for image metrics should be a divisor of bs

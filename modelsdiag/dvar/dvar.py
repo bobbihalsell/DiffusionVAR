@@ -1,6 +1,8 @@
 """
 DiffusionVAR model implementation.
 
+Modified from VAR: https://github.com/FoundationVision/VAR
+
 This module implements the DiffusionVAR model that combines autoregressive generation
 with diffusion-based masking for improved image synthesis quality.
 """
@@ -144,9 +146,10 @@ class DiffusionVAR(nn.Module):
         
         self.noise = MaskingSchedule(schedule_fn_type=self.noise_schedule)
         self.mask_index = self.V 
-        attn_bias_for_masking = self.diff_mask_bias()
-        self.register_buffer('attn_bias_for_masking', 
-                           attn_bias_for_masking.contiguous())
+
+        # 5. algorithm-specific components
+        attn_bias_for_masking = torch.where(d == dT, 0., -torch.inf).reshape(1, 1, self.L, self.L)
+        self.register_buffer('attn_bias_for_masking', attn_bias_for_masking.contiguous())
         
 
         # this allows us to mask VAE embeddings without extending the VQVAE vocabulary
@@ -169,7 +172,7 @@ class DiffusionVAR(nn.Module):
         
         # create backbone with extended vocabulary
         self.backbone = Backbone(
-            vocab_size=self.V+1,  # include mask token
+            vocab_size=self.V,  # include mask token
             embed_dim=embed_dim,
             num_heads=num_heads, 
             depth=depth,
@@ -219,36 +222,30 @@ class DiffusionVAR(nn.Module):
             sos = (cond_BD.unsqueeze(1).expand(B, self.first_l, -1) + 
                   self.pos_start.expand(B, self.first_l, -1))
             
-            noise_BLCvae = self.q_xt(gt_BL[:, :ed], p)
+            noise_BLCvae = self.q_xt(gt_BL[:, :ed], sos, x_BLCv_wo_first_l.float(), p)
             noise_embeddings = self.word_embed(noise_BLCvae.float())
 
             lvl_embed_seq = self.lvl_embed(self.lvl_1L[:, :ed].expand(B, -1))
             pos_embed_seq = self.pos_1LC[:, :ed]
-            # repeat 2 times for [input, mask_embeddings]
-            lvl_embed_diffusion = torch.cat([lvl_embed_seq, lvl_embed_seq], dim=1)
-            pos_embed_diffusion = torch.cat([pos_embed_seq, pos_embed_seq], dim=1)
 
             if self.prog_si == 0:
-                x_BLC = torch.cat((sos, noise_embeddings), dim=1)
+                x_BLC = sos
             else:
                 input_embeddings = self.word_embed(x_BLCv_wo_first_l.float())
-                x_BLC = torch.cat((sos, input_embeddings, noise_embeddings), dim=1)
-            x_BLC += lvl_embed_diffusion + pos_embed_diffusion
+                x_BLC = torch.cat((sos, noise_embeddings), dim=1)
+            x_BLC += lvl_embed_seq + pos_embed_seq
 
-        
         # hack to get main dtype for mixed precision
         temp = x_BLC.new_ones(8, 8)
         main_type = torch.matmul(temp, temp).dtype
         x_BLC = x_BLC.to(dtype=main_type)
 
-        attn_bias = self.attn_bias_slice(ed)
-        attn_bias = attn_bias.to(dtype=main_type)
+        # attn_bias = self.attn_bias_slice(ed)
+        attn_bias = self.attn_bias_for_masking[:, :, :ed, :ed].to(dtype=main_type)
 
         # forward
         x_BLC = self.backbone(x_BLC=x_BLC, cond_BD=tcond_BD, attn_bias=attn_bias)
         logits_BlV1 = self.backbone.get_logits(x_BLC.float(), tcond_BD)
-        slice_bg = self.first_l if self.prog_si == 0 else self.L
-        logits_BlV1 = logits_BlV1[:, slice_bg:, :] # slice to mask tokens
         
         # apply parameterization hack for first scale
         if self.prog_si == 0:
@@ -311,7 +308,6 @@ class DiffusionVAR(nn.Module):
 
         cur_L = 0
         f_hat = sos.new_zeros(B, self.Cvae, self.patch_nums[-1], self.patch_nums[-1])
-        all_maps = [next_token_map]
         for si, pn in enumerate(self.patch_nums):  # si: i-th segment
             patch_length = pn * pn
             bg = cur_L
@@ -322,15 +318,11 @@ class DiffusionVAR(nn.Module):
             current_tokens = torch.full(
                 (B, patch_length), self.mask_index, 
                 device=self.device, dtype=torch.long)
-            mask_vae_embeddings = self.mask_embedding.expand(
-                2*B, patch_length, -1)
-            mask_embeddings = (self.word_embed(mask_vae_embeddings) + 
-                             self.pos_1LC[:, bg:ed] + lvl_pos[:, bg:ed])
-            x = torch.cat((next_token_map, mask_embeddings), dim=1)  # 2B, L, C
+            x = next_token_map  # 2B, L, C
 
             # variable number of steps for different patches
             scale_steps = int(max(1, steps*self.gen_steps[si]))
-            if self.cont_time: num_scale_steps = scale_steps + 1 # allow to go to 0
+            if self.cont_time: num_scale_steps = scale_steps + 1
             else: num_scale_steps = scale_steps
             for step in range(num_scale_steps):  # ensure s is not negative
                 t = 1.0 - step / scale_steps 
@@ -353,25 +345,26 @@ class DiffusionVAR(nn.Module):
                     logits_BlV1 = logits_BlV1 / temperature
                     logits_BlV1 = F.softmax(logits_BlV1, dim=-1)
 
-                # D3PM sampling: create proper probability distribution
+                # sampling: create proper probability distribution
                 alpha_t = self.noise.alpha(t_batch)
                 alpha_s = self.noise.alpha(s_batch)
                 if step == (num_scale_steps - 1): 
                     unmask_prob = torch.ones_like(alpha_t, dtype=torch.float32) # should be 1 but due to floating point precision, it may not
                 else: 
-                    # unmask_prob = torch.zeros_like(alpha_t, dtype=torch.float32)
-                    if self.cont_time:
-                        unmask_rate = self.noise.dgamma_times_alpha(t_batch) #[:, None, None]  # (B, 1, 1)
-                        dt = (t_batch - s_batch) #[:, None, None]  # (B, 1, 1)
-                        unmask_prob = 1 - torch.exp(unmask_rate * dt)
-                        if unmask_prob.min() < 0 or unmask_prob.max() > 1:
-                            unmask_prob = torch.clamp(unmask_prob, 0, 1)
-                    else:
-                        unmask_prob = (alpha_s - alpha_t) / (1 - alpha_t) 
+                    unmask_prob = torch.zeros_like(alpha_t, dtype=torch.float32)
+                    # if self.cont_time:
+                    #     unmask_rate = self.noise.dgamma_times_alpha(t_batch) #[:, None, None]  # (B, 1, 1)
+                    #     dt = (t_batch - s_batch) #[:, None, None]  # (B, 1, 1)
+                    #     unmask_prob = 1 - torch.exp(unmask_rate * dt)
+                    #     if unmask_prob.min() < 0 or unmask_prob.max() > 1:
+                    #         print(f"unmask_prob: {unmask_prob.max().item()}")
+                    #         unmask_prob = torch.clamp(unmask_prob, 0, 1)
+                    # else:
+                    #     unmask_prob = (alpha_s - alpha_t) / (1 - alpha_t)             
                 unmask_prob = unmask_prob[:, None, None]
                 
                 # apply filtering
-                vocab_probs = filter_top_k_top_p_(logits_BlV1[:, :, :-1], top_k, top_p)
+                vocab_probs = filter_top_k_top_p_(logits_BlV1, top_k, top_p)
                 probs_vocab = unmask_prob * vocab_probs  
                 probs_mask = (1 - unmask_prob).expand(-1, patch_length, -1) 
                 probs_BlV1 = torch.cat([probs_vocab, probs_mask], dim=-1) 
@@ -390,8 +383,8 @@ class DiffusionVAR(nn.Module):
                     t_vae_embeddings = self.vae_quant_proxy[0].embedding(sampled_tokens[newly_unmasked])
                     t_word_embeddings = self.word_embed(t_vae_embeddings)
                     # update the input embeddings
-                    x[:B, -patch_length:, :][newly_unmasked] = t_word_embeddings 
-                    x[B:, -patch_length:, :] = x[:B, -patch_length:, :]
+                    x[:B][newly_unmasked] = t_word_embeddings 
+                    x[B:] = x[:B]
 
                 if (current_tokens == self.mask_index).sum() == 0:
                     break
@@ -415,7 +408,6 @@ class DiffusionVAR(nn.Module):
                 next_token_map = (self.word_embed(next_token_map) + 
                                 lvl_pos[:, cur_L:cur_L + self.patch_nums[si+1] ** 2])
                 next_token_map = next_token_map.repeat(2, 1, 1)
-                all_maps.append(next_token_map)
 
         result = self.vae_proxy[0].fhat_to_img(f_hat).add_(1).mul_(0.5)  # de-normalize, from [-1, 1] to [0, 1]
         return result
@@ -443,33 +435,34 @@ class DiffusionVAR(nn.Module):
         p = 1.0 - alpha_t
         logits_BLV1 = self.forward(label_B, x_BLCv_wo_first_l, gt_BL, p, t)
 
-        ce_flat = self.ce_loss(logits_BLV1.reshape(-1, self.V+1), gt_BL.reshape(-1))
+        ce_flat = self.ce_loss(logits_BLV1.reshape(-1, self.V), gt_BL.reshape(-1))
         ce = ce_flat.reshape(B, -1)
 
         alpha_t1 = self.noise.alpha(torch.tensor(0.0, device=self.device))
-        loss_recon = - (torch.prod(torch.tensor(gt_BL.shape[1:], device=self.device))
-                     * (1.0 - alpha_t1)
-                     * torch.log(torch.tensor(self.V+1, device=self.device)))
-        latent_loss = torch.tensor(0.0)
+        # loss_recon = - (torch.prod(torch.tensor(gt_BL.shape[1:], device=self.device))
+        #              * (1.0 - alpha_t1)
+        #              * torch.log(torch.tensor(self.V, device=self.device)))
+        # latent_loss = torch.tensor(0.0)
 
         mask = self.last_masking_info
-        masked_neg_cross_ent = mask * - ce
+        masked_cross_ent = mask * ce
+        sclaed_mce = (mask.shape[0]*mask.shape[1] / mask.sum()) * masked_cross_ent
 
-        if not self.cont_time:
-            # loss for finite depth T, i.e. discrete time
-            s = t - (1.0 / num_steps)
-            gt = self.noise(t)
-            gs = self.noise(s)
-            weights = torch.expm1(gt - gs)[:, None] * self.noise.alpha(s)[:, None]
-            if loss_w_max is not None:
-                weights = weights.clamp(min=-loss_w_max, max=0)
-            diff_loss = num_steps * weights * masked_neg_cross_ent
-        else:
-            # cont-time loss
-            weights = self.noise.dgamma_times_alpha(t)[:, None]
-            if loss_w_max is not None:
-                weights = weights.clamp(min=-loss_w_max, max=0)
-            diff_loss = weights * masked_neg_cross_ent
+        # if not self.cont_time:
+        #     # loss for finite depth T, i.e. discrete time
+        #     s = t - (1.0 / num_steps)
+        #     gt = self.noise(t)
+        #     gs = self.noise(s)
+        #     weights = torch.expm1(gt - gs)[:, None] * self.noise.alpha(s)[:, None]
+        #     if loss_w_max is not None:
+        #         weights = weights.clamp(min=-loss_w_max, max=0)
+        #     diff_loss = num_steps * weights * masked_neg_cross_ent
+        # else:
+        #     # cont-time loss
+        #     weights = self.noise.dgamma_times_alpha(t)[:, None]
+        #     if loss_w_max is not None:
+        #         weights = weights.clamp(min=-loss_w_max, max=0)
+        #     diff_loss = weights * masked_neg_cross_ent
 
         if return_preds:
             preds = logits_BLV1.argmax(dim=-1)
@@ -477,9 +470,9 @@ class DiffusionVAR(nn.Module):
             preds = None
 
         losses = {
-            'diff_loss': diff_loss,
-            'loss_recon': loss_recon,
-            'latent_loss': latent_loss,
+            # 'diff_loss': diff_loss,
+            # 'loss_recon': loss_recon,
+            # 'latent_loss': latent_loss,
             'scale': (mask.shape[0]*mask.shape[1] / mask.sum()),
             'ce': ce,
             'preds': preds,
@@ -487,22 +480,23 @@ class DiffusionVAR(nn.Module):
         }
         return losses
 
-    def q_xt(self, gt_BL: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
+    def q_xt(self, gt_BL: torch.Tensor, sos: torch.Tensor, x_BLCv_wo_first_l: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
         """uniform masking across all scales."""
         B, L = gt_BL.shape
         mask_prob = p.unsqueeze(1)  # (B, 1)
-        mask_decisions = torch.rand(B, L, device=self.device) < mask_prob
+        mask_decisions = torch.rand(B, L-self.first_l, device=self.device) < mask_prob
         gt_BLC = self.vae_quant_proxy[0].embedding(gt_BL)
-        mask_embedding = self.mask_embedding.expand(B, L, -1)
         noised_embeddings = torch.where(
             mask_decisions.unsqueeze(-1), 
-            mask_embedding, 
-            gt_BLC
+            x_BLCv_wo_first_l, 
+            gt_BLC[:, self.first_l:, :]
         )
         # store for accuracy calculation
-        self.last_masking_info = mask_decisions
+        self.last_masking_info = torch.cat((
+            torch.ones(B, self.first_l, device=self.device), 
+            mask_decisions),
+            dim=1)
         return noised_embeddings
-
     
     def sample_t(self, batch_size: int, min_t: float = 1e-3, 
                 num_steps: int = None) -> torch.Tensor:

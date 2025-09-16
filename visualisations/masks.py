@@ -32,9 +32,10 @@ def var_mask(patch_nums):
     T = sum(scale_sizes)
     mask = torch.zeros((2*T, 2*T), dtype=torch.bool)
     for i, size in enumerate(scale_sizes):
-        start = 2*sum(scale_sizes[:i])
-        end = 2*sum(scale_sizes[:i+1])
-        mask[start:end, start:end] = True
+        start_row = 2*sum(scale_sizes[:i])
+        end_row = 2*sum(scale_sizes[:i+1])
+        end_col = 2*sum(scale_sizes[:i+1]) 
+        mask[start_row:end_row, :end_col] = True
     return mask
 
 def bd3lm_mask(patch_nums):
