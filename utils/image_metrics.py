@@ -242,12 +242,13 @@ class ImageMetrics:
     def generate_images(self, var_model, batch_size: int = 32, 
                        label_B: torch.Tensor = None, steps: int = 250, 
                        num_classes: int = 10, split_batch: int = 1, 
-                       temperature: float = 0.8) -> Optional[torch.Tensor]:
+                       temperature: float = 0.8, measure_time: bool = False) -> Tuple[Optional[torch.Tensor], Optional[float]]:
         """generate images using the var model with distributed training support."""
         world_size = dist.get_world_size() if dist.initialized() else 1
         rank = dist.get_rank() if dist.initialized() else 0
         print(f"[Rank {rank}] Starting image generation: "
               f"batch_size={batch_size}, split_batch={split_batch}")
+        
         try:
             # generate random labels if none provided
             if label_B is None:
@@ -260,11 +261,12 @@ class ImageMetrics:
             # only master rank generates - others return dummy data
             if rank != 0:
                 print(f"[Rank {rank}] Non-master rank, returning dummy data")
-                return torch.zeros(batch_size, 3, 256, 256, device=self.device)
+                return torch.zeros(batch_size, 3, 256, 256, device=self.device), None
             
             # master rank does all the work
             sub_batch_size = max(1, B // max(1, split_batch))
             generated_batches = []
+            batch_times = []
             
             for i in range(0, B, sub_batch_size):
                 end_idx = min(i + sub_batch_size, B)
@@ -280,6 +282,13 @@ class ImageMetrics:
                         torch.cuda.empty_cache()
                         torch.cuda.synchronize()
                     
+                    # Start timing if requested - only for the inference loop
+                    start_time = None
+                    if measure_time:
+                        start_time = time.time()
+                        if torch.cuda.is_available():
+                            torch.cuda.synchronize()
+                    
                     sub_generated = var_model.infer_cfg(
                         B=sub_B, 
                         label_B=sub_labels, 
@@ -291,40 +300,53 @@ class ImageMetrics:
                         more_smooth=False,
                     )
                     
+                    # End timing if requested
+                    generation_time = None
+                    if measure_time and start_time is not None:
+                        if torch.cuda.is_available():
+                            torch.cuda.synchronize()
+                        generation_time = time.time() - start_time
+                        print(f"[Rank {rank}] Inference time: {generation_time:.3f} seconds")
+                    
                     if sub_generated is not None:
                         generated_batches.append(sub_generated.cpu().clone())
+                        if measure_time and generation_time is not None:
+                            batch_times.append(generation_time)
                         print(f"[Rank {rank}] Successfully generated sub-batch "
                               f"{i//sub_batch_size + 1}")
                     else:
                         print(f"[Rank {rank}] FAILED: Generation returned None "
                               f"for sub-batch {i//sub_batch_size + 1}")
-                        return None
+                        return None, None
                         
                 except Exception as e:
                     print(f"[Rank {rank}] FAILED: Error in sub-batch "
                           f"{i//sub_batch_size + 1}: {e}")
                     traceback.print_exc()
-                    return None
+                    return None, None
             
             # concatenate all sub-batches
             if generated_batches:
                 generated_batch = torch.cat(generated_batches, dim=0)
                 print(f"[Rank {rank}] Successfully generated "
                       f"{generated_batch.shape[0]} images")
-                return generated_batch
+                
+                # Return average timing if measured
+                avg_time = sum(batch_times) / len(batch_times) if batch_times else None
+                return generated_batch, avg_time
             else:
                 print(f"[Rank {rank}] No successful generations")
-                return None
+                return None, None
                 
         except Exception as e:
             print(f"[Rank {rank}] Critical error in image generation: {e}")
             traceback.print_exc()
-            return None
+            return None, None
 
     def calculate_all_metrics(self, var_model, vae_model, dataloader: DataLoader, 
                             n_images: int = 1000, n_return_images: int = 16, 
                             steps: int = 250, num_classes: int = 10, 
-                            split_batch: int = 1) -> dict:
+                            split_batch: int = 1, measure_timing: bool = False) -> dict:
         """calculate all image quality metrics with robust error handling."""
         world_size = dist.get_world_size() if dist.initialized() else 1
         rank = dist.get_rank() if dist.initialized() else 0
@@ -350,6 +372,12 @@ class ImageMetrics:
         generated_images = []
         real_images = []
         
+        # for timing metrics
+        generation_times = []
+        timing_batches_processed = 0
+        max_timing_batches = 10 if measure_timing else 0
+        skip_first_batch = True  # Skip first batch for warmup
+        
         try:
             with torch.no_grad():
                 total_images_processed = 0
@@ -374,10 +402,22 @@ class ImageMetrics:
                               f"{B_to_process} images")
                         
                         # generate images for this batch
-                        generated_batch = self.generate_images(
+                        should_measure_time = (measure_timing and 
+                                             timing_batches_processed < max_timing_batches and
+                                             not (skip_first_batch and batch_idx == 0))
+                        generated_batch, generation_time = self.generate_images(
                             var_model, B_to_process, label_B[:B_to_process], 
-                            steps, num_classes, split_batch
+                            steps, num_classes, split_batch, measure_time=should_measure_time
                         )
+                        
+                        # collect timing data (skip first batch for warmup)
+                        if should_measure_time and generation_time is not None:
+                            generation_times.append(generation_time)
+                            timing_batches_processed += 1
+                            print(f"[Rank {rank}] Timing batch {timing_batches_processed}/{max_timing_batches}: "
+                                  f"{generation_time:.3f}s")
+                        elif skip_first_batch and batch_idx == 0:
+                            print(f"[Rank {rank}] Skipping first batch timing (warmup)")
                         
                         if generated_batch is None:
                             print(f"[Rank {rank}] FAILED: Generation failed "
@@ -488,6 +528,19 @@ class ImageMetrics:
             # return images
             metrics['generated_images'] = generated_images
             metrics['real_images'] = real_images
+            
+            # add timing metrics if measured
+            if measure_timing and generation_times:
+                avg_generation_time = sum(generation_times) / len(generation_times)
+                metrics['avg_generation_time'] = avg_generation_time
+                metrics['generation_times'] = generation_times
+                metrics['timing_batches_measured'] = len(generation_times)
+                print(f"[Rank {rank}] Average generation time over {len(generation_times)} batches: "
+                      f"{avg_generation_time:.3f} seconds")
+            else:
+                metrics['avg_generation_time'] = None
+                metrics['generation_times'] = []
+                metrics['timing_batches_measured'] = 0
             
             print(f"[Rank {rank}] Metrics calculation complete!")
             

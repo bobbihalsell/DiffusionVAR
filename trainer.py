@@ -133,7 +133,7 @@ class Trainer:
         :return: scalar loss tensor
         """ 
         if self.algo == 'diffusion-var':
-            loss_BL = losses['diff_loss']
+            loss_BL = losses['diff_loss'] + losses['loss_recon'] + losses['latent_loss']
         else:
             loss_BL = losses['ce']
 
@@ -148,15 +148,7 @@ class Trainer:
             lw = self.loss_weight
 
         loss_BL = loss_BL.mul(lw)
-
-        if self.algo == 'diffusion-var':
-            diff_loss = loss_BL.sum(dim=-1).mean()
-            recon_loss = losses['loss_recon']
-            latent_loss = losses['latent_loss']
-            loss = diff_loss + recon_loss + latent_loss
-        else:
-            loss = loss_BL.sum(dim=-1).mean()
-
+        loss = loss_BL.sum(dim=-1).mean()
         return loss
 
     def scale_losses(self, losses: torch.Tensor) -> Tuple[float, torch.Tensor]:
@@ -173,15 +165,12 @@ class Trainer:
         loss_BL = losses['ce']
         B, L = loss_BL.shape
         
-        # Lmean = loss_BL.mean()
         scale_L = torch.zeros(len(self.begin_ends), device=self.device)
 
         if self.algo == 'diffusion-var':
             masked = losses['masked']
-            # Average loss per masked token (across entire batch)
             Lmean = (loss_BL * masked).sum() / masked.sum()
         else:
-            # Average loss per token (across entire batch)  
             Lmean = loss_BL.mean()
 
         # In progressive training, only compute up to current stage + 1

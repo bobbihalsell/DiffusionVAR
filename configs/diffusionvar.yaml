@@ -35,7 +35,7 @@ alng: 0.00001               # multiplier of ada_lin.w[gamma channels]'s initiali
 # diffusion parameters
 diffusion_args:
   train_steps: 100          # timesteps for training not used if cont_time is true
-  inf_steps: 50             # timesteps for inference
+  inf_steps: 40             # timesteps for inference
   noise_schedule: 'cosine'          
   cont_time: true           # continuous or discrete time
   t_emb_dim: 256                     

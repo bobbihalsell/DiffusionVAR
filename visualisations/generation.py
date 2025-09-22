@@ -1,5 +1,6 @@
 import argparse
 import gc
+import json
 import os
 import sys
 import time
@@ -194,14 +195,23 @@ def run_overall_evaluation(args, vae_local, var_wo_ddp, ld_train, metrics_calcul
     print(f"Generating {args.n_images} images for metrics calculation...")
     
     try:
+        # Get diffusion steps with fallback (only for diffusion-var)
+        diffusion_steps = 250  # default
+        if (hasattr(args, 'algo') and args.algo == 'diffusion-var' and 
+            hasattr(args, 'diffusion_args') and args.diffusion_args is not None):
+            diffusion_steps = getattr(args.diffusion_args, 'inf_steps', 250)
+        elif hasattr(args, 'algo') and args.algo == 'var':
+            diffusion_steps = None  # VAR doesn't use diffusion steps
+        
         metrics = metrics_calculator.calculate_all_metrics(
             var_wo_ddp, 
             vae_local, 
             ld_train, 
             n_images=args.n_images,
             n_return_images=args.n_display_images,
-            steps=args.diffusion_args.inf_steps, 
-            split_batch=getattr(args, 'split_batch', 1)
+            steps=diffusion_steps, 
+            split_batch=getattr(args, 'split_batch', 1),
+            measure_timing=getattr(args, 'measure_timing', False)
         )
         
         lpips = metrics['lpips']
@@ -210,11 +220,17 @@ def run_overall_evaluation(args, vae_local, var_wo_ddp, ld_train, metrics_calcul
         fid = metrics['fid']
         generated_images = metrics['generated_images']
         real_images = metrics['real_images']
+        avg_generation_time = metrics.get('avg_generation_time', None)
+        timing_batches_measured = metrics.get('timing_batches_measured', 0)
         
         print(f"Overall Results:")
         print(f"  LPIPS: {lpips:.4f}")
         print(f"  Inception Score: {inception_score:.4f} ± {inception_std:.4f}")
         print(f"  FID: {fid:.4f}")
+        if avg_generation_time is not None:
+            print(f"  Average Generation Time: {avg_generation_time:.3f}s (over {timing_batches_measured} batches)")
+        else:
+            print(f"  Average Generation Time: Not measured")
         
         # Save images
         metrics_calculator.display_images(
@@ -230,7 +246,9 @@ def run_overall_evaluation(args, vae_local, var_wo_ddp, ld_train, metrics_calcul
             'lpips': lpips,
             'inception_score': inception_score,
             'inception_std': inception_std,
-            'fid': fid
+            'fid': fid,
+            'avg_generation_time': avg_generation_time,
+            'timing_batches_measured': timing_batches_measured
         }
         
     except Exception as e:
@@ -271,14 +289,23 @@ def run_class_evaluation(args, vae_local, var_wo_ddp, metrics_calculator):
             continue
         
         try:
+            # Get diffusion steps with fallback (only for diffusion-var)
+            diffusion_steps = 250  # default
+            if (hasattr(args, 'algo') and args.algo == 'diffusion-var' and 
+                hasattr(args, 'diffusion_args') and args.diffusion_args is not None):
+                diffusion_steps = getattr(args.diffusion_args, 'inf_steps', 250)
+            elif hasattr(args, 'algo') and args.algo == 'var':
+                diffusion_steps = None  # VAR doesn't use diffusion steps
+            
             metrics = metrics_calculator.calculate_all_metrics(
                 var_wo_ddp, 
                 vae_local, 
                 class_loader, 
                 n_images=args.n_class_images,
                 n_return_images=min(args.n_display_images, args.n_class_images),
-                steps=args.diffusion_args.inf_steps, 
-                split_batch=getattr(args, 'split_batch', 1)
+                steps=diffusion_steps, 
+                split_batch=getattr(args, 'split_batch', 1),
+                measure_timing=getattr(args, 'measure_timing', False)
             )
             
             lpips = metrics['lpips']
@@ -287,11 +314,15 @@ def run_class_evaluation(args, vae_local, var_wo_ddp, metrics_calculator):
             fid = metrics['fid']
             generated_images = metrics['generated_images']
             real_images = metrics['real_images']
+            avg_generation_time = metrics.get('avg_generation_time', None)
+            timing_batches_measured = metrics.get('timing_batches_measured', 0)
             
             print(f"Class {class_id} Results:")
             print(f"  LPIPS: {lpips:.4f}")
             print(f"  Inception Score: {inception_score:.4f} ± {inception_std:.4f}")
             print(f"  FID: {fid:.4f}")
+            if avg_generation_time is not None:
+                print(f"  Average Generation Time: {avg_generation_time:.3f}s (over {timing_batches_measured} batches)")
             
             # Save class images
             class_dir = os.path.join(args.save_dir, f'class_{class_id}')
@@ -310,7 +341,9 @@ def run_class_evaluation(args, vae_local, var_wo_ddp, metrics_calculator):
                 'lpips': lpips,
                 'inception_score': inception_score,
                 'inception_std': inception_std,
-                'fid': fid
+                'fid': fid,
+                'avg_generation_time': avg_generation_time,
+                'timing_batches_measured': timing_batches_measured
             }
             
         except Exception as e:
@@ -337,6 +370,9 @@ def print_summary(overall_results, class_results):
         print(f"  LPIPS: {overall_results['lpips']:.4f}")
         print(f"  IS: {overall_results['inception_score']:.4f} ± {overall_results['inception_std']:.4f}")
         print(f"  FID: {overall_results['fid']:.4f}")
+        if overall_results.get('avg_generation_time') is not None:
+            print(f"  Avg Generation Time: {overall_results['avg_generation_time']:.3f}s "
+                  f"(over {overall_results.get('timing_batches_measured', 0)} batches)")
     
     if class_results:
         print("\nCLASS-CONDITIONAL METRICS:")
@@ -345,8 +381,69 @@ def print_summary(overall_results, class_results):
             print(f"    LPIPS: {results['lpips']:.4f}")
             print(f"    IS: {results['inception_score']:.4f} ± {results['inception_std']:.4f}")
             print(f"    FID: {results['fid']:.4f}")
+            if results.get('avg_generation_time') is not None:
+                print(f"    Avg Generation Time: {results['avg_generation_time']:.3f}s "
+                      f"(over {results.get('timing_batches_measured', 0)} batches)")
     
     print("="*60)
+
+
+def save_metrics_to_json(overall_results, class_results, args, save_dir):
+    """
+    Save all metrics to a JSON file including timing data.
+    """
+    if not overall_results and not class_results:
+        print("No results to save to JSON")
+        return
+    
+    # Get diffusion steps with fallback (only for diffusion-var)
+    diffusion_steps = 250  # default
+    if (hasattr(args, 'algo') and args.algo == 'diffusion-var' and 
+        hasattr(args, 'diffusion_args') and args.diffusion_args is not None):
+        diffusion_steps = getattr(args.diffusion_args, 'inf_steps', 250)
+    elif hasattr(args, 'algo') and args.algo == 'var':
+        diffusion_steps = None  # VAR doesn't use diffusion steps
+    
+    # Prepare the complete metrics dictionary
+    metrics_data = {
+        "evaluation_info": {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "epoch": getattr(args, 'ep', 1),
+            "n_images": getattr(args, 'n_images', 1000),
+            "n_display_images": getattr(args, 'n_display_images', 36),
+            "n_class_images": getattr(args, 'n_class_images', 100),
+            "measure_timing": getattr(args, 'measure_timing', False),
+            "diffusion_steps": diffusion_steps,
+            "split_batch": getattr(args, 'split_batch', 1)
+        },
+        "overall_metrics": overall_results,
+        "class_metrics": class_results
+    }
+    
+    # Create save directory if it doesn't exist
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # Generate filename with timestamp
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    epoch = getattr(args, 'ep', 1)
+    json_filename = f"evaluation_metrics_epoch_{epoch}_{timestamp}.json"
+    json_path = os.path.join(save_dir, json_filename)
+    
+    try:
+        with open(json_path, 'w') as f:
+            json.dump(metrics_data, f, indent=2, default=str)
+        print(f"\nMetrics saved to: {json_path}")
+        
+        # Also save a latest version without timestamp
+        latest_json_path = os.path.join(save_dir, "latest_evaluation_metrics.json")
+        with open(latest_json_path, 'w') as f:
+            json.dump(metrics_data, f, indent=2, default=str)
+        print(f"Latest metrics saved to: {latest_json_path}")
+        
+    except Exception as e:
+        print(f"Error saving metrics to JSON: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def main():
@@ -370,6 +467,10 @@ def main():
                        help='Classes for evaluation (e.g., "0_1_2_3")')
     parser.add_argument('--n_class_images', type=int, default=100,
                        help='Number of images per class')
+    parser.add_argument('--measure_timing', action='store_true', default=True,
+                       help='Measure and report generation timing metrics (default: True)')
+    parser.add_argument('--no_measure_timing', action='store_false', dest='measure_timing',
+                       help='Disable timing measurement')
 
     eval_args, _ = parser.parse_known_args()
     
@@ -408,6 +509,11 @@ def main():
     
     # Print summary
     print_summary(overall_results, class_results)
+    
+    # Save metrics to JSON
+    if dist.is_master():
+        save_metrics_to_json(overall_results, class_results, args, args.save_dir)
+    
     print(f"\nResults saved to: {args.save_dir}")
     
     # Cleanup

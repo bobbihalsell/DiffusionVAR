@@ -411,7 +411,8 @@ def main_training():
                         n_images=n_images,
                         n_return_images=n_wandb_images,  # use n_wandb_images for WandB
                         steps=args.diffusion_args.inf_steps, 
-                        split_batch=args.split_batch
+                        split_batch=args.split_batch,
+                        measure_timing=getattr(args, 'measure_timing', False)
                     )
                     lpips_score = metrics['lpips']
                     inception_score = metrics['inception_score']

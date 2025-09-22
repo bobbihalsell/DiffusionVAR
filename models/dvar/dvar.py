@@ -330,7 +330,12 @@ class DiffusionVAR(nn.Module):
 
             # variable number of steps for different patches
             scale_steps = int(max(1, steps*self.gen_steps[si]))
-            for step in range(scale_steps):  # ensure s is not negative
+            if self.cont_time: 
+                num_scale_steps = scale_steps + 1 # allow to go to 0
+                dt = torch.full((B,), 1.0 / scale_steps, device=self.device)
+            else: 
+                num_scale_steps = scale_steps
+            for step in range(num_scale_steps):  # ensure s is not negative
                 t = 1.0 - step / scale_steps 
                 s = t - 1.0 / scale_steps  # previous step 
                 t_batch = torch.full((B,), t, device=self.device) 
@@ -357,10 +362,14 @@ class DiffusionVAR(nn.Module):
                 # D3PM sampling: create proper probability distribution
                 alpha_t = self.noise.alpha(t_batch)
                 alpha_s = self.noise.alpha(s_batch)
-                if step == (scale_steps - 1): 
+                if step == (num_scale_steps - 1): 
                     unmask_prob = torch.ones_like(alpha_t, dtype=torch.float32) # should be 1 but due to floating point precision, it may not
                 else: 
-                    unmask_prob = (alpha_s - alpha_t) / (1 - alpha_t)             
+                    if self.cont_time:
+                        unmask_rate = self.noise.dgamma_times_alpha(t_batch)
+                        unmask_prob = 1 - torch.exp(unmask_rate * dt)
+                    else:
+                        unmask_prob = (alpha_s - alpha_t) / (1 - alpha_t) 
                 unmask_prob = unmask_prob[:, None, None]
                 
                 # apply filtering
